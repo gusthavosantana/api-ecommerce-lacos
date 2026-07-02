@@ -1,0 +1,92 @@
+# Stack ISOLADO para testes de integração/e2e.
+# Sobe uma API + Postgres + Redis dedicados (rede própria, sem volumes persistentes,
+# sem portas publicadas no host) e roda a coleção Postman via Newman contra a API.
+#
+# Uso:
+#   npm run test:e2e        # sobe tudo, roda o newman e retorna o exit code dele
+#   npm run test:e2e:down   # derruba e remove os recursos (rede/containers órfãos)
+#
+# Nada aqui compartilha nome/porta/volume com o stack de desenvolvimento
+# (docker-compose.yml), então pode rodar em paralelo sem colisão.
+#
+# 'name' isola o projeto Docker: garante que este stack nunca mexa nos
+# containers/redes do docker-compose.yml (que usa o nome do diretório).
+name: ecommerce_e2e
+
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: api_ecommerce_test
+    # Banco efêmero em memória: cada execução começa limpa.
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - test_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d api_ecommerce_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis-test:
+    image: redis:7-alpine
+    networks:
+      - test_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api-test:
+    build: .
+    environment:
+      NODE_ENV: test
+      PORT: 3000
+      DATABASE_URL: postgresql://test:test@postgres-test:5432/api_ecommerce_test
+      REDIS_HOST: redis-test
+      REDIS_PORT: 6379
+      # Segredos fixos apenas para o ambiente de teste (não são de produção).
+      JWT_ACCESS_SECRET: test-access-secret
+      JWT_ACCESS_EXPIRATION: 15m
+      JWT_REFRESH_SECRET: test-refresh-secret
+      JWT_REFRESH_EXPIRATION: 7d
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test_network
+    command: >
+      sh -c "npx prisma generate && npx prisma migrate deploy && node src/server.js"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  newman:
+    image: postman/newman:alpine
+    depends_on:
+      api-test:
+        condition: service_healthy
+    networks:
+      - test_network
+    volumes:
+      - ./postman:/etc/newman
+    # A imagem já tem ENTRYPOINT ["newman"]; aqui passamos só os argumentos.
+    # baseUrl é sobrescrito para o nome do serviço na rede docker.
+    command: >
+      run cancelamento-de-pedido.postman_collection.json
+      --environment local.postman_environment.json
+      --env-var baseUrl=http://api-test:3000/api/v1
+      --reporters cli
+
+networks:
+  test_network:
+    driver: bridge

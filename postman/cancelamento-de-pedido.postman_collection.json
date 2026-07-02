@@ -484,7 +484,7 @@
                   "pm.test('status 400 - motivo obrigatorio p/ admin', () => {",
                   "  pm.response.to.have.status(400);",
                   "  const b = pm.response.json();",
-                  "  pm.expect(b.code).to.eql('INVALID_PAYLOAD');",
+                  "  pm.expect(b.error.code).to.eql('INVALID_PAYLOAD');",
                   "});"
                 ]
               }
@@ -516,7 +516,7 @@
                   "pm.test('status 404 e code RESOURCE_NOT_FOUND', () => {",
                   "  pm.response.to.have.status(404);",
                   "  const b = pm.response.json();",
-                  "  pm.expect(b.code).to.eql('RESOURCE_NOT_FOUND');",
+                  "  pm.expect(b.error.code).to.eql('RESOURCE_NOT_FOUND');",
                   "});"
                 ]
               }
