@@ -6,3 +6,6 @@ dist/
 build/
 
 /src/generated/prisma
+.claude
+specs/
+coverage/

@@ -20,6 +20,18 @@ const orderController = {
         } catch (error) {
             next(error);
         }
+    },
+
+    cancel: async (req, res, next) => {
+        try {
+            const order = await orderService.cancelOrder(req.user, req.params.id, req.body?.reason);
+            res.status(200).json({
+                data: order,
+                message: 'Pedido cancelado com sucesso'
+            });
+        } catch (error) {
+            next(error);
+        }
     }
 };
 

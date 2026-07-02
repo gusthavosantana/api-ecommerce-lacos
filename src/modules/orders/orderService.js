@@ -1,12 +1,76 @@
 const orderRepository = require('./orderRepository');
 const cartService = require('../cart/cartService');
 const productRepository = require('../products/productRepository');
+const paymentService = require('../payments/paymentService');
 const AppError = require('../../utils/AppError');
 const logger = require('../../config/logger');
+
+// Estados a partir dos quais o pedido ainda pode ser cancelado. (FR-002)
+const CANCELABLE_STATUSES = ['PENDING', 'PAID'];
 
 const orderService = {
     listOrders: async (userId) => {
         return await orderRepository.findManyByUser(userId);
+    },
+
+    // Cancela um pedido aplicando as regras de permissão, estado e reembolso.
+    // actor = { sub, role }. reason é opcional para o cliente e obrigatório p/ admin.
+    cancelOrder: async (actor, orderId, reason) => {
+        const order = await orderRepository.findById(orderId);
+
+        // Pedido inexistente — erro claro, sem vazar dados de outros clientes. (FR-010)
+        if (!order) {
+            throw new AppError('Pedido não encontrado', 404, 'RESOURCE_NOT_FOUND');
+        }
+
+        const isAdmin = actor.role === 'ADMIN';
+
+        // Um usuário comum só pode cancelar os próprios pedidos. (FR-003)
+        if (!isAdmin && order.userId !== actor.sub) {
+            throw new AppError('Você não tem permissão para cancelar este pedido', 403, 'FORBIDDEN');
+        }
+
+        // Idempotência: já cancelado não altera estoque/pagamento/estado. (FR-006)
+        if (order.status === 'CANCELED') {
+            logger.info(`Cancelamento idempotente: pedido ${order.id} já estava cancelado`);
+            return order;
+        }
+
+        // Somente estados canceláveis; enviado/entregue/concluído são rejeitados. (FR-002)
+        if (!CANCELABLE_STATUSES.includes(order.status)) {
+            throw new AppError(
+                'Este pedido não pode mais ser cancelado. Entre em contato com o suporte para devolução.',
+                409,
+                'CONFLICT'
+            );
+        }
+
+        // Motivo é obrigatório quando o cancelamento é feito por um admin. (FR-013)
+        if (isAdmin && (!reason || !reason.trim())) {
+            throw new AppError('O motivo do cancelamento é obrigatório para administradores', 400, 'INVALID_PAYLOAD');
+        }
+
+        // Transação atômica: libera estoque + marca CANCELED + auditoria. (FR-004,005,007,012)
+        const canceledOrder = await orderRepository.cancelOrderTransaction(order, {
+            canceledBy: actor.sub,
+            reason: reason ?? null
+        });
+
+        // Pedido pago → iniciar reembolso do valor total. (FR-008)
+        // Expõe o status do reembolso na resposta para dar visibilidade ao cliente
+        // de que ele está em processamento (US2). (FR-008, FR-010)
+        if (order.status === 'PAID') {
+            const refund = await paymentService.initiateRefund(order);
+            canceledOrder.refundStatus = refund.refundStatus;
+            if (canceledOrder.payment) {
+                canceledOrder.payment.refundStatus = refund.refundStatus;
+            }
+        }
+
+        // Evento de cancelamento para integrações/rastreabilidade. (FR-009)
+        logger.info(`Evento Emitido: order.canceled { orderId: ${order.id}, canceledBy: ${actor.sub} }`);
+
+        return canceledOrder;
     },
 
     checkout: async (userId) => {

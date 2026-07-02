@@ -19,6 +19,8 @@ enum ProductStatus {
 enum OrderStatus {
   PENDING
   PAID
+  SHIPPED
+  DELIVERED
   CANCELED
 }
 
@@ -83,6 +85,10 @@ model Order {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
 
+  canceledAt   DateTime?
+  canceledBy   String?
+  cancelReason String?
+
   items    OrderItem[]
   payment  Payment?
 
@@ -106,6 +112,7 @@ model Payment {
   orderId       String   @unique
   order         Order    @relation(fields: [orderId], references: [id])
   status        String   @default("AWAITING_CONFIRMATION")
+  refundStatus  String? // ex.: PROCESSING quando um reembolso é iniciado
   externalId    String? // clientSecret ou id do gateway
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
