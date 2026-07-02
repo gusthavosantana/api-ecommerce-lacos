@@ -69,6 +69,27 @@ const paymentService = {
         });
 
         return { message: 'Pagamento e Pedido cancelados' };
+    },
+
+    // Inicia o reembolso de um pedido pago. A conclusão efetiva é assíncrona
+    // (depende do provedor de pagamento), por isso apenas marcamos o reembolso
+    // como PROCESSING e emitimos o evento correspondente. (FR-008)
+    initiateRefund: async (order) => {
+        const payment = await paymentRepository.findByOrderId(order.id);
+        if (!payment) {
+            throw new AppError('Pagamento não encontrado para reembolso', 404, 'RESOURCE_NOT_FOUND');
+        }
+
+        const updated = await prisma.payment.update({
+            where: { id: payment.id },
+            data: { refundStatus: 'PROCESSING' }
+        });
+
+        logger.info(
+            `Evento Emitido: payment.refund.initiated { orderId: ${order.id}, amount: ${order.totalValue} }`
+        );
+
+        return { refundStatus: updated.refundStatus, amount: Number(order.totalValue) };
     }
 };
 

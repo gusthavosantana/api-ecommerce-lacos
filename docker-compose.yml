@@ -39,9 +39,9 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV}
       PORT: ${PORT}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_HOST: ${REDIS_HOST}
-      REDIS_PORT: ${REDIS_PORT}
+      DATABASE_URL: postgresql://admin:admin123@postgres:5432/api_ecommerce
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}

@@ -13,7 +13,9 @@
       "mcp__7e7ad987-09be-4f61-94e9-efa7c79a8162__getCollection",
       "mcp__7e7ad987-09be-4f61-94e9-efa7c79a8162__putCollection",
       "mcp__7e7ad987-09be-4f61-94e9-efa7c79a8162__updateCollectionRequest",
-      "Bash(docker exec *)"
+      "Bash(docker exec *)",
+      "Bash(ls -la ~/.claude/skills/ 2>/dev/null; echo \"---PROJECT---\"; ls -la .claude/skills/ 2>/dev/null; echo \"---PLUGINS---\"; ls -la .claude/ 2>/dev/null)",
+      "Bash(find ~/.claude -name \"SKILL.md\" 2>/dev/null | head -20; echo \"---\"; find . -name \"SKILL.md\" 2>/dev/null | head -20)"
     ]
   }
 }

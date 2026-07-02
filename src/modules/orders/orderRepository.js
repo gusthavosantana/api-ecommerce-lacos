@@ -1,6 +1,14 @@
 const prisma = require('../../config/database');
+const AppError = require('../../utils/AppError');
 
 const orderRepository = {
+    findById: async (orderId) => {
+        return await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { items: true, payment: true }
+        });
+    },
+
     findManyByUser: async (userId) => {
         return await prisma.order.findMany({
             where: { userId },
@@ -60,6 +68,48 @@ const orderRepository = {
             });
 
             return order;
+        });
+    },
+
+    // Cancelamento atômico: libera o estoque de cada item e marca o pedido como
+    // CANCELED com dados de auditoria. O update é condicionado ao status atual
+    // (single-flight), garantindo que dois cancelamentos concorrentes não liberem
+    // estoque em dobro nem gerem dois reembolsos. (FR-005, FR-006, FR-007, FR-012)
+    cancelOrderTransaction: async (order, { canceledBy, reason }) => {
+        return await prisma.$transaction(async (tx) => {
+            // 1. Liberar estoque (inverso da reserva do checkout)
+            for (const item of order.items) {
+                await tx.product.update({
+                    where: { id: item.productId },
+                    data: { stock: { increment: item.quantity } }
+                });
+            }
+
+            // 2. Atualizar status + auditoria condicionado ao status esperado
+            const result = await tx.order.updateMany({
+                where: { id: order.id, status: order.status },
+                data: {
+                    status: 'CANCELED',
+                    canceledAt: new Date(),
+                    canceledBy,
+                    cancelReason: reason ?? null
+                }
+            });
+
+            if (result.count === 0) {
+                // Alguém já alterou o status entre a leitura e a escrita.
+                throw new AppError(
+                    'Pedido não pôde ser cancelado (estado alterado concorrentemente)',
+                    409,
+                    'CONFLICT'
+                );
+            }
+
+            // 3. Retornar o pedido atualizado
+            return await tx.order.findUnique({
+                where: { id: order.id },
+                include: { items: true, payment: true }
+            });
         });
     }
 };
